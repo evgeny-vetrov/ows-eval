@@ -1,0 +1,75 @@
+PY3_LIBRARY()
+
+PY_SRCS(
+    __init__.py
+    core/__init__.py
+    core/backoff.py
+    core/codec.py
+    core/control.py
+    core/evaluation.py
+    core/flow.py
+    core/ids.py
+    core/interpreter.py
+    core/journal.py
+    core/limits.py
+    core/listen.py
+    core/projection.py
+    core/run.py
+    core/semantics.py
+    core/state.py
+    core/swap.py
+    dsl/__init__.py
+    dsl/compiler.py
+    dsl/diagnostics.py
+    dsl/graph.py
+    dsl/loader.py
+    dsl/parser.py
+    model/__init__.py
+    model/base.py
+    model/catalog.py
+    model/commands.py
+    model/context.py
+    model/durations.py
+    model/event.py
+    model/filter.py
+    model/jsonvalue.py
+    model/observations.py
+    model/problem.py
+    model/scenario.py
+    model/stimuli.py
+    model/swap.py
+    ports/__init__.py
+    ports/blobs.py
+    ports/catalogs.py
+    ports/effects.py
+    ports/expressions.py
+    ports/matching.py
+    ports/schemas.py
+    ports/storage.py
+    runtime/__init__.py
+    runtime/host.py
+    testing/__init__.py
+    testing/catalogs.py
+    testing/effects.py
+    testing/expressions.py
+    testing/kit.py
+    testing/matcher.py
+    testing/pilot.py
+    testing/runner.py
+    testing/schemas.py
+    testing/stores.py
+    testing/world.py
+    version.py
+)
+
+PEERDIR(
+    contrib/python/pydantic/pydantic-2
+    contrib/python/PyYAML
+    contrib/python/jsonschema
+)
+
+END()
+
+RECURSE_FOR_TESTS(
+    tests
+)

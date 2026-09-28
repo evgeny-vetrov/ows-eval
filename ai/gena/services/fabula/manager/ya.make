@@ -1,0 +1,69 @@
+PY3_LIBRARY()
+
+PY_SRCS(
+    __init__.py
+    agents/__init__.py
+    agents/prompt.py
+    agents/runner.py
+    api/__init__.py
+    api/dispatch.py
+    api/facade.py
+    api/openapi.py
+    api/operations.py
+    api/schemas.py
+    deps.py
+    diff/__init__.py
+    diff/scenario_diff.py
+    diff/service.py
+    fabulas/__init__.py
+    fabulas/indexing.py
+    fabulas/service.py
+    migrations/__init__.py
+    migrations/service.py
+    model/__init__.py
+    model/audit.py
+    model/campaigns.py
+    model/common.py
+    model/diff.py
+    model/errors.py
+    model/fabulas.py
+    model/resolution.py
+    model/scenarios.py
+    model/tags.py
+    ports/__init__.py
+    ports/agents.py
+    ports/catalogs.py
+    ports/runtime.py
+    ports/stores.py
+    ports/system.py
+    registry/__init__.py
+    registry/routing.py
+    registry/scenarios.py
+    registry/tags.py
+    resolution/__init__.py
+    resolution/brief.py
+    resolution/hint_resolver.py
+    resolution/service.py
+    service.py
+    system.py
+    testing/__init__.py
+    testing/catalogs.py
+    testing/faults.py
+    testing/scenarios.py
+    testing/stand.py
+    testing/stores.py
+    testing/system.py
+)
+
+PEERDIR(
+    ai/gena/services/fabula/engine
+    contrib/python/pydantic/pydantic-2
+    contrib/python/PyYAML
+    contrib/python/jsonschema
+)
+
+END()
+
+RECURSE_FOR_TESTS(
+    tests
+)

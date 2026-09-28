@@ -1,0 +1,9 @@
+RECURSE(
+    api
+    architecture
+    diff
+    fabulas
+    migrations
+    registry
+    resolution
+)

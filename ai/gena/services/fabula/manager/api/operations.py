@@ -86,7 +86,8 @@ class Operation:
     handler: str
     method: str
     path: str
-    permission: str
+    # None: any authenticated actor may call it.
+    permission: str | None
     tag: str
     summary: str
     response: Any

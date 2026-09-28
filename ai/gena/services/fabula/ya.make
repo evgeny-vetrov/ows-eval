@@ -1,4 +1,5 @@
 RECURSE(
     engine
     manager
+    server
 )

@@ -1,0 +1,24 @@
+# Capabilities and event types of the demo scenarios.
+capabilities:
+  - ref: 'inventory.reserve:1@demo'
+    title: Reserve the goods of an order
+    input_schema: {type: object, required: [order], properties: {order: {type: string}}}
+    effects: [writes]
+    default_timeout: PT10M
+  - ref: 'payment.charge:1@demo'
+    title: Charge the customer
+    input_schema: {type: object, required: [order], properties: {order: {type: string}}}
+    effects: [writes, external]
+    cancellable: false
+    default_timeout: PT1H
+  - ref: 'payment.charge:2@demo'
+    title: Charge the customer (new payment gateway)
+    input_schema: {type: object, required: [order], properties: {order: {type: string}}}
+    effects: [writes, external]
+    cancellable: false
+    default_timeout: PT1H
+events:
+  - type: shop.order.shipped
+    data_schema: {type: object, required: [order], properties: {order: {type: string}, carrier: {type: string}}}
+  - type: shop.order.completed
+    data_schema: {type: object, required: [order], properties: {order: {type: string}}}

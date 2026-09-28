@@ -6,11 +6,13 @@ committed copy; a test keeps the two equal.
 
 import json
 import sys
+from collections.abc import Iterable
+from http import HTTPStatus
 from typing import Any
 
 from pydantic.json_schema import models_json_schema
 
-from ai.gena.services.fabula.manager.api.operations import OPERATIONS
+from ai.gena.services.fabula.manager.api.operations import OPERATIONS, Operation
 from ai.gena.services.fabula.manager.api.schemas import ProblemDetails
 
 REF = "#/components/schemas/{model}"
@@ -57,9 +59,15 @@ def _query_parameters(model: Any, defs: dict[str, Any]) -> list[dict[str, Any]]:
     return parameters
 
 
-def build_openapi() -> dict[str, Any]:
+def _error_description(code: int) -> str:
+    return ERROR_DESCRIPTIONS.get(code) or HTTPStatus(code).phrase
+
+
+def build_openapi(operations: Iterable[Operation] = OPERATIONS, tags: list[dict[str, str]] = TAGS) -> dict[str, Any]:
+    """The document of the manager's operations; a host passes its own additions."""
+    operations = tuple(operations)
     pairs = [(ProblemDetails, "serialization")]
-    for op in OPERATIONS:
+    for op in operations:
         if op.body is not None:
             pairs.append((op.body, "validation"))
         pairs.append((op.response, "serialization"))
@@ -67,25 +75,22 @@ def build_openapi() -> dict[str, Any]:
     refs, top = models_json_schema(pairs, ref_template=REF)
     schemas = dict(top.get("$defs", {}))
     paths: dict[str, dict[str, Any]] = {}
-    for op in OPERATIONS:
+    for op in operations:
         parameters = [{"name": name, "in": "path", "required": True, "schema": {"type": "string"}} for name in op.path_params]
         if op.query is not None:
             parameters += _query_parameters(op.query, schemas)
         responses = {str(op.status): {"description": "OK", "content": {"application/json": {"schema": refs[(op.response, "serialization")]}}}}
         if op.handler == "start_fabula":
             responses["200"] = {"description": "The fabula this request started earlier", "content": {"application/json": {"schema": refs[(op.response, "serialization")]}}}
-        for code in sorted({400, 403, *op.errors}):
+        for code in sorted({400, *op.errors} | ({403} if op.permission is not None else set())):
             responses[str(code)] = {
-                "description": ERROR_DESCRIPTIONS[code],
+                "description": _error_description(code),
                 "content": {"application/problem+json": {"schema": refs[(ProblemDetails, "serialization")]}},
             }
-        operation: dict[str, Any] = {
-            "operationId": op.operation_id,
-            "summary": op.summary,
-            "tags": [op.tag],
-            "x-permission": op.permission,
-            "responses": dict(sorted(responses.items())),
-        }
+        operation: dict[str, Any] = {"operationId": op.operation_id, "summary": op.summary, "tags": [op.tag]}
+        if op.permission is not None:
+            operation["x-permission"] = op.permission
+        operation["responses"] = dict(sorted(responses.items()))
         if parameters:
             operation["parameters"] = parameters
         if op.body is not None:
@@ -94,7 +99,7 @@ def build_openapi() -> dict[str, Any]:
     return {
         "openapi": "3.1.0",
         "info": {"title": "Fabula manager API", "version": API_VERSION, "description": DESCRIPTION},
-        "tags": TAGS,
+        "tags": tags,
         "paths": paths,
         "components": {"schemas": dict(sorted(schemas.items()))},
     }

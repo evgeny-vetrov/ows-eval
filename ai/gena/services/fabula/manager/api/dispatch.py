@@ -4,20 +4,24 @@
 JSON-shaped input (query values as strings or lists of strings), validates it,
 checks the actor's right, calls the facade and returns the status and JSON body. Any
 error becomes an RFC 7807 problem. `Dispatcher.route` maps an HTTP method and path to
-an operation, so an HTTP adapter is a few lines in any framework.
+an operation of the manager, so an HTTP adapter is a few lines in any framework.
+
+A host may dispatch its own operations (same `Operation` rows, its own facade) through
+another `Dispatcher` built with `operations=`; `dispatcher.match` routes within that
+table.
 """
 
 import json
 import re
 import typing
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
 from ai.gena.services.fabula.engine.ports.storage import FabulaNotFound
-from ai.gena.services.fabula.manager.api.facade import FabulaApi
-from ai.gena.services.fabula.manager.api.operations import BY_ID, OPERATIONS, Operation
+from ai.gena.services.fabula.manager.api.operations import OPERATIONS, Operation
 from ai.gena.services.fabula.manager.api.schemas import ApiResult
 from ai.gena.services.fabula.manager.model.common import Actor
 from ai.gena.services.fabula.manager.model.errors import Forbidden, InvalidInput, ManagerError, NotFound
@@ -68,22 +72,55 @@ def _route_pattern(template: str) -> re.Pattern:
     return re.compile(f"^{regex}$")
 
 
-# Templates with a custom verb first: `/tags/{tag}:resolve` before `/tags/{tag}`.
-_ROUTES = sorted(((op.method, _route_pattern(op.path), op) for op in OPERATIONS), key=lambda route: ":" not in re.sub(r"{\w+}", "", route[2].path))
+def has_custom_verb(op: Operation) -> bool:
+    return ":" in re.sub(r"{\w+}", "", op.path)
+
+
+def in_routing_order(operations: Iterable[Operation]) -> list[Operation]:
+    """Templates with a custom verb first: `/tags/{tag}:resolve` before `/tags/{tag}`."""
+    return sorted(operations, key=lambda op: not has_custom_verb(op))
+
+
+Routes = list[tuple[str, re.Pattern, Operation]]
+
+
+def _routes(operations: Iterable[Operation]) -> Routes:
+    return [(op.method, _route_pattern(op.path), op) for op in in_routing_order(operations)]
+
+
+def _match(routes: Routes, method: str, path: str) -> tuple[Operation, dict[str, str]] | None:
+    for route_method, pattern, op in routes:
+        match = pattern.match(path)
+        if match and route_method == method.upper():
+            return op, match.groupdict()
+    return None
+
+
+_ROUTES = _routes(OPERATIONS)
 
 
 class Dispatcher:
-    def __init__(self, api: FabulaApi, authorizer: Authorizer):
+    def __init__(self, api: Any, authorizer: Authorizer, operations: Iterable[Operation] = OPERATIONS):
+        """`api` has a method per `Operation.handler`; `FabulaApi` for the manager's table."""
         self.api = api
         self.authorizer = authorizer
+        self.operations = tuple(operations)
+        self._by_id = {op.operation_id: op for op in self.operations}
+        if len(self._by_id) != len(self.operations):
+            raise ValueError("operation ids must be unique")
+        missing = [op.handler for op in self.operations if not callable(getattr(api, op.handler, None))]
+        if missing:
+            raise ValueError(f"the api lacks handlers: {', '.join(missing)}")
+        self._routes = _routes(self.operations)
 
     @staticmethod
     def route(method: str, path: str) -> tuple[Operation, dict[str, str]] | None:
-        for route_method, pattern, op in _ROUTES:
-            match = pattern.match(path)
-            if match and route_method == method.upper():
-                return op, match.groupdict()
-        return None
+        """An operation of the manager's table."""
+        return _match(_ROUTES, method, path)
+
+    def match(self, method: str, path: str) -> tuple[Operation, dict[str, str]] | None:
+        """An operation of this dispatcher's table."""
+        return _match(self._routes, method, path)
 
     async def dispatch(
         self,
@@ -94,7 +131,7 @@ class Dispatcher:
         query: dict[str, Any] | None = None,
         body: Any = None,
     ) -> ApiResponse:
-        op = BY_ID.get(operation_id)
+        op = self._by_id.get(operation_id)
         if op is None:
             return problem(404, "unknown_operation", f"there is no operation {operation_id}")
         try:
@@ -117,7 +154,7 @@ class Dispatcher:
         parsed_query = parse_query(op.query, query) if op.query is not None else None
         parsed_body = op.body.model_validate(body if body is not None else {}) if op.body is not None else None
         resource = op.resource(path, parsed_body)
-        if not await self.authorizer.allowed(actor, op.permission, resource):
+        if op.permission is not None and not await self.authorizer.allowed(actor, op.permission, resource):
             raise Forbidden(f"{actor} lacks {op.permission} on {resource}", code="forbidden")
         result = await getattr(self.api, op.handler)(actor, path, parsed_query, parsed_body)
         status = op.status

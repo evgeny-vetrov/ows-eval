@@ -4,6 +4,7 @@ import asyncio
 import json
 
 import pytest
+from pydantic import BaseModel
 
 from ai.gena.services.fabula.engine.model.stimuli import OutcomeOk
 from ai.gena.services.fabula.manager.api.dispatch import Dispatcher
@@ -212,7 +213,7 @@ def test_an_agent_resolves_with_the_hint_resolver_against_a_started_fleet():
 
 @pytest.mark.parametrize("op", OPERATIONS, ids=lambda op: op.operation_id)
 def test_every_operation_declares_its_contract(op):
-    assert op.permission and op.summary and op.response is not None
+    assert op.permission and op.summary and op.response is not None, "every manager operation needs a permission"
     assert (op.body is None) or op.method in ("POST", "PUT", "PATCH")
     assert op.method != "GET" or op.body is None
 
@@ -221,3 +222,41 @@ def test_outcomes_of_manager_generated_request_ids_are_routable():
     routed = Dispatcher.route("GET", "/v1/fabulas/f-1/controls/mig:mig-1:f-1:1:swap")
     assert routed[0].operation_id == "getControlOutcome" and routed[1]["request_id"] == "mig:mig-1:f-1:1:swap"
     assert Dispatcher.route("GET", "/v1/migrations/mig-1:apply") is None
+
+
+class _Echo(BaseModel):
+    actor: str = ""
+    poked: str = ""
+
+
+class _HostApi:
+    """A host's own operations, dispatched with the manager's machinery."""
+
+    async def whoami(self, actor, path, query, body):
+        return _Echo(actor=str(actor))
+
+    async def poke(self, actor, path, query, body):
+        return _Echo(poked=path["thing"])
+
+
+def test_a_host_dispatches_its_own_operations():
+    from ai.gena.services.fabula.manager.api.openapi import build_openapi
+    from ai.gena.services.fabula.manager.api.operations import Operation
+
+    extra = (
+        Operation("whoami", "GET", "/v1/me", None, "session", "Who am I", _Echo),
+        Operation("poke", "POST", "/v1/things/{thing}:poke", "fabula.control", "session", "Poke a thing", _Echo),
+    )
+    nobody = RoleAuthorizer({})
+    dispatcher = Dispatcher(_HostApi(), nobody, extra)
+    me = run(dispatcher.dispatch("whoami", actor=ALICE))
+    assert (me.status, me.body) == (200, {"actor": "user:alice", "poked": ""}), "no permission: authentication is enough"
+    assert run(dispatcher.dispatch("poke", actor=ALICE, path={"thing": "x"})).status == 403
+    assert run(dispatcher.dispatch("getScenario", actor=ALICE, path=ORDER)).body["code"] == "unknown_operation"
+    assert dispatcher.match("POST", "/v1/things/x:poke")[0].operation_id == "poke" and Dispatcher.route("GET", "/v1/me") is None
+    assert dispatcher.match("GET", "/v1/scenarios/test/order") is None
+    document = build_openapi(extra, tags=[{"name": "session"}])
+    assert "x-permission" not in document["paths"]["/v1/me"]["get"] and "403" not in document["paths"]["/v1/me"]["get"]["responses"]
+    assert document["paths"]["/v1/things/{thing}:poke"]["post"]["x-permission"] == "fabula.control"
+    with pytest.raises(ValueError, match="lacks handlers: poke"):
+        Dispatcher(type("Partial", (), {"whoami": _HostApi.whoami})(), nobody, extra)

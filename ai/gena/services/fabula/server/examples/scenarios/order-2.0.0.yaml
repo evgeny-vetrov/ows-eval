@@ -1,0 +1,27 @@
+# Charging moves to the new payment gateway: fabulas waiting on the old charge cannot
+# move in flight, the migration shows them as blocked and asks how to resolve them.
+document:
+  dsl: '1.0.3'
+  namespace: demo
+  name: order
+  version: '2.0.0'
+  title: Order fulfilment
+do:
+  - accept: {set: {}, export: {as: '${ {order: $input.order} }'}}
+  - reserve: {call: 'inventory.reserve:1@demo', with: {order: '${ $context.order }'}}
+  - charge: {call: 'payment.charge:2@demo', with: {order: '${ $context.order }'}}
+  - awaitShipment:
+      listen:
+        to:
+          one:
+            with: {type: shop.order.shipped}
+            correlate:
+              order: {from: '${ .data.order }', expect: '${ $context.order }'}
+      timeout: {after: P2D}
+  - announce:
+      emit:
+        event:
+          with:
+            type: shop.order.completed
+            data: {order: '${ $context.order }'}
+  - finish: {set: {order: '${ $context.order }', state: done, version: '2.0'}}

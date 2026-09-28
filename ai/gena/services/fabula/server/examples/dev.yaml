@@ -1,0 +1,27 @@
+# A development server: everyone who calls is trusted, the sandbox runs the fabulas.
+#   python -m ai.gena.services.fabula.server --config ai/gena/services/fabula/server/examples/dev.yaml
+http:
+  host: 127.0.0.1
+  port: 8080
+  # Typical dev servers of a web UI (Vite, Create React App).
+  cors_origins: ['http://localhost:5173', 'http://localhost:3000']
+auth:
+  mode: dev
+  dev_actor: 'user:developer'
+  grants:
+    'user:*': [admin]
+    'agent:*': [resolver]
+    'service:*': [viewer]
+catalog:
+  files: [catalog.yaml]
+sandbox:
+  behaviours:
+    # Reservations finish by themselves after two seconds; charges wait for a person
+    # (POST /v1/sandbox/invocations:complete).
+    'inventory.reserve:*': {mode: echo, after_seconds: 2}
+seed:
+  scenarios_dir: scenarios
+background:
+  reconcile_seconds: 30
+  agents:
+    - {actor_id: hint-resolver, interval_seconds: 5}

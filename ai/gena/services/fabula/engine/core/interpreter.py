@@ -4,7 +4,7 @@ from collections import OrderedDict
 from datetime import datetime
 from typing import Any
 
-from ai.gena.services.fabula.engine.core.control import Controls
+from ai.gena.services.fabula.engine.core.control import RECOVERABLE, Controls
 from ai.gena.services.fabula.engine.core.limits import EngineLimits
 from ai.gena.services.fabula.engine.core.run import ACTIVE, Transition
 from ai.gena.services.fabula.engine.core.semantics import DEFAULT_FLAGS, Semantics, validate_flags
@@ -177,9 +177,12 @@ class Interpreter:
     ) -> SwapReport:
         """Pure preview of `SwapVersion`: where the cursor lands, which operations survive,
         which nodes restart and which context keys the new version lacks."""
+        base = dict(applicable=False, compatible=False, from_ref=state.scenario.ref, to_ref=new_scenario.ref)
+        if state.status not in RECOVERABLE:
+            return SwapReport(**base, problems=(f"not allowed while the fabula is {state.status}",))
         run = Run(self, self.graph(state.scenario), state, state.last_at)
         if run.agenda:
-            return SwapReport(applicable=False, compatible=False, from_ref=state.scenario.ref, to_ref=new_scenario.ref, problems=("the fabula has pending work",))
+            return SwapReport(**base, problems=("the fabula has pending work",))
         return run.plan_swap(new_scenario, mapping or {}, context_migration).report
 
     def apply(self, state: FabulaState, stimulus: Stimulus) -> Transition:

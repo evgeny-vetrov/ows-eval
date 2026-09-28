@@ -1,10 +1,10 @@
 import pytest
 
-from cases_swap import SNAPSHOT_V1, SNAPSHOT_V2, SNAPSHOT_V3, SWAP_CASES, V1_TEXT
+from cases_swap import MERGED, SNAPSHOT_V1, SNAPSHOT_V2, SNAPSHOT_V3, SWAP_CASES, V1_TEXT
 
-from ai.gena.services.fabula.engine.model.stimuli import SwapVersion
+from ai.gena.services.fabula.engine.model.stimuli import Cancel, SwapVersion
 from ai.gena.services.fabula.engine.testing.kit import Kit
-from ai.gena.services.fabula.engine.testing.runner import Act, Case, Finish, ScenarioRunner, check_case, run_case
+from ai.gena.services.fabula.engine.testing.runner import Act, Case, Deliver, Finish, ScenarioRunner, check_case, run_case
 
 KIT = Kit()
 
@@ -77,3 +77,11 @@ def test_swapped_fabula_survives_reload_and_semantics_stay_pinned():
     log = check_case(case)
     assert log.state.semantics.engine_version == "0.1.0"
     assert log.state.scenario.ref == "test/swap:3.0.0"
+
+
+@pytest.mark.parametrize("script, status", [([Finish(node="/ask", output={}), Deliver(node="/merged", event=MERGED)], "completed"), ([Act(action=Cancel())], "cancelled")])
+def test_analysis_of_a_finished_fabula_reports_instead_of_failing(script, status):
+    state = ScenarioRunner(KIT).run(SNAPSHOT_V1, script, input={"ticket": "T-1"}).state
+    assert state.status == status
+    report = ScenarioRunner(KIT).interpreter().analyze_swap(state, SNAPSHOT_V2, {})
+    assert (report.applicable, report.problems) == (False, (f"not allowed while the fabula is {status}",))
